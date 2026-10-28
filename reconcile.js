@@ -5,14 +5,35 @@
 
 const fs = require("fs");
 
+const lines = fs.readFileSync("payments.jsonl", "utf8").split("\n");
+
+// Only the latest attempt for each txn_id counts.
+const latest = new Map();
+for (const line of lines) {
+  if (line.trim().length === 0) continue;
+  let event;
+  try {
+    event = JSON.parse(line);
+  } catch {
+    continue; // unreadable line
+  }
+  if (!event || !event.txn_id) continue;
+  const prev = latest.get(event.txn_id);
+  if (!prev || Date.parse(event.ts) >= Date.parse(prev.ts)) {
+    latest.set(event.txn_id, event);
+  }
+}
+
+// Amounts are sometimes strings with thousands separators, e.g. "4,804.15".
+function parseAmount(a) {
+  return typeof a === "number" ? a : Number(String(a).replace(/,/g, ""));
+}
+
 let total = 0;
 let count = 0;
-
-const lines = fs.readFileSync("payments.jsonl", "utf8").split("\n").filter((l) => l.length > 0);
-for (const line of lines) {
-  const event = JSON.parse(line);
+for (const event of latest.values()) {
   if (event.status === "success") {
-    total += Number(event.amount);
+    total += parseAmount(event.amount);
     count += 1;
   }
 }
